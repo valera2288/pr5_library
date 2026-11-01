@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -120,6 +122,46 @@ void main() {
 
     expect(
         adapter.requests.where((r) => r.path == '/auth/refresh'), hasLength(1));
+  });
+
+  group('Восстановление сессии', () {
+    Future<(AuthNotifier, SharedPreferences)> restoreWith(
+        Map<String, String> extra) async {
+      final (auth, _, _) = await _setup((_) => (200, _session('A1')));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_access_token', 'A1');
+      await prefs.setString('auth_refresh_token', 'R1');
+      await prefs.setString(
+          'auth_user',
+          jsonEncode({
+            'id': 3,
+            'username': 'reader',
+            'fullName': 'Смирнов П. А.',
+            'role': 'reader',
+          }));
+      await prefs.setString(
+          'auth_last_activity', DateTime.now().toIso8601String());
+      for (final e in extra.entries) {
+        await prefs.setString(e.key, e.value);
+      }
+      await auth.restore();
+      return (auth, prefs);
+    }
+
+    test('без времени входа отсчёт срока сессии начинается заново', () async {
+      final (auth, prefs) = await restoreWith({});
+      expect(auth.isAuthenticated, isTrue);
+      expect(prefs.getString('auth_login_at'), isNotNull);
+    });
+
+    test('после предельного срока сессия завершается', () async {
+      final old = DateTime.now().subtract(const Duration(days: 1));
+      final (auth, prefs) =
+          await restoreWith({'auth_login_at': old.toIso8601String()});
+      expect(auth.isAuthenticated, isFalse);
+      expect(auth.takeEndReason(), contains('максимальный срок'));
+      expect(prefs.getString('auth_access_token'), isNull);
+    });
   });
 
   test('выход удаляет токены', () async {

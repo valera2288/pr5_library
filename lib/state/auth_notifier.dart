@@ -78,7 +78,13 @@ class AuthNotifier extends ChangeNotifier {
       await logout(reason: 'Сессия завершена из-за неактивности.');
       return;
     }
-    if (_loginAt != null && now.difference(_loginAt!) > sessionMax) {
+    // Время входа пропало (очищено или повреждено): отсчёт идёт заново,
+    // иначе предел длительности сессии для такой записи не действовал бы
+    if (_loginAt == null) {
+      _loginAt = now;
+      await _prefs.setString(_kLoginAt, now.toIso8601String());
+    }
+    if (now.difference(_loginAt!) > sessionMax) {
       await logout(reason: 'Истёк максимальный срок сессии. Войдите снова.');
       return;
     }
